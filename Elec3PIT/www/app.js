@@ -10,17 +10,20 @@
 
   // Where your Django backend runs. Use your PC's WiFi IP (e.g. http://192.168.0.10:8000)
   // if you open the app from a phone. 127.0.0.1 only works on the PC running Django.
+  // Note: Android (Capacitor) blocks plain http:// unless cleartext is allowed in
+  // capacitor.config (server.cleartext = true) or you serve the backend over https.
   const BACKEND = 'http://127.0.0.1:8000';
 
   // The gauge works on a "level" where 1000 = a sensor reached ITS OWN alarm point.
   const WARN = 600, DANGER = 1000, MAX = 2000, ARC_LEN = 251.3;
 
-  // MQ-2 sends an absolute level (avg). Put here the value the app shows for the MQ-2
-  // when nothing is happening (check it after warm-up/calibration).
-  const MQ2_IDLE = 589;
-
-  // The "alarm>" numbers your ESP32 prints in the serial monitor after calibration.
+  // Fallback alarm points, used only if the backend does not send the device's own
+  // thresholds. They match ALARM_MIN in the firmware.
   const ALARM_AT = { mq2: 100, mq7: 40, mq135: 100 };
+
+  // Readings older than this are treated as "ESP32 offline" (needs a timestamp
+  // field from the backend: created_at / timestamp / time / ts).
+  const STALE_MS = 15000;
 
   // ==========================================================================
 
@@ -41,24 +44,31 @@
   };
 
   // ---- shared state (persisted) ------------------------------------------
-  // 'readings2' (not 'readings') so old values on the previous scale don't get mixed in
-  let readings = store.get('readings2', []);
+  // 'readings3' so values from older scales are never mixed in
+  let readings = store.get('readings3', []);
   let state    = store.get('state', 'safe');
   let muted    = store.get('muted', false);
   let forceSpike = false;
 
   // ---- sensor levels -----------------------------------------------------
-  // Turns each sensor's number into "how close is it to its own alarm point".
   const SENSOR_KEYS = ['mq2', 'mq7', 'mq135'];
 
-  function sensorLevel(k, v, live) {
-    if (!live) return Math.max(0, v);                       // demo mode: numbers are already levels
-    const rise = k === 'mq2' ? v - MQ2_IDLE : v;            // MQ-2 is absolute, MQ-7/MQ-135 are already rises
-    return Math.max(0, rise / ALARM_AT[k] * DANGER);
+  // Turns each sensor's "rise above baseline" into "how close is it to its own alarm point".
+  // In live mode every value is already a rise (the device subtracts its own baseline).
+  function sensorLevel(k, v, live, thresh) {
+    if (!live) return Math.max(0, v);                        // demo mode: numbers are already levels
+    const limit = (thresh && thresh[k]) || ALARM_AT[k];
+    return Math.max(0, v / limit * DANGER);
   }
 
+  // The device decides alarms (LEDs, buzzer, Telegram). When it tells us the alarm
+  // state, the app follows it so both always agree.
   function overallLevel(r, live) {
-    return Math.round(Math.max(...SENSOR_KEYS.map(k => sensorLevel(k, r[k] ?? 0, live))));
+    const lvl = Math.round(Math.max(...SENSOR_KEYS.map(k => sensorLevel(k, r[k] ?? 0, live, r.thresh))));
+    if (live && typeof r.alarm === 'boolean') {
+      return r.alarm ? Math.max(lvl, DANGER) : Math.min(lvl, DANGER - 1);
+    }
+    return lvl;
   }
 
   // ---- activity log ------------------------------------------------------
@@ -115,7 +125,7 @@
 
     const v = readings.at(-1);
     if (v === undefined) return;
-    txt('ppm', v);
+    txt('ppm', Math.min(v, MAX));                              // never show absurd numbers
     if ($('arc')) $('arc').style.strokeDashoffset = ARC_LEN * (1 - Math.min(v, MAX) / MAX);
     if ($('min')) {
       txt('min', Math.min(...readings));
@@ -126,9 +136,10 @@
   }
 
   function render(v) {
+    v = Math.min(v, MAX);
     readings.push(v);
     if (readings.length > 200) readings.shift();
-    store.set('readings2', readings);
+    store.set('readings3', readings);
 
     const s = classify(v);
     if (s !== state) {                         // only react (and log) on a state change
@@ -155,14 +166,15 @@
     ).join('');
   }
 
-  // The number shown is the sensor's own value; the bar and its colour show how close it is to its alarm point.
+  // The number shown is the sensor's rise above its baseline; the bar and its colour
+  // show how close it is to its alarm point.
   function showSensors(r) {
     if (!$('sensorList')) return;
     store.set('lastSensors', r);
     const live = !!store.get('espIp', '');
     SENSORS.forEach(([k]) => {
       const rawVal = r[k] ?? 0;
-      const lvl = Math.min(MAX, sensorLevel(k, rawVal, live));
+      const lvl = Math.min(MAX, sensorLevel(k, rawVal, live, r.thresh));
       if ($('b-' + k)) {
         $('b-' + k).style.width = (lvl / MAX * 100) + '%';
         $('b-' + k).style.background = `var(--${classify(lvl)})`;
@@ -175,6 +187,36 @@
     if ($('conn')) $('conn').classList.toggle('off', m === 'offline');
     if ($('connText')) $('connText').textContent = { demo: 'Demo mode', connecting: 'Connecting…', online: 'ESP32 online', offline: 'ESP32 offline', warmup: `Warming up ${left ?? ''}s` }[m];
     txt('mode', m === 'demo' ? 'Demo data' : 'Live');
+  }
+
+  // ---- backend helpers ---------------------------------------------------
+  // Parse a timestamp from the usual Django field names; returns ms or null.
+  function rowTime(row) {
+    const raw = row.created_at ?? row.timestamp ?? row.time ?? row.ts ?? null;
+    if (raw === null) return null;
+    const ms = typeof raw === 'number' ? (raw < 1e12 ? raw * 1000 : raw) : Date.parse(raw);
+    return Number.isNaN(ms) ? null : ms;
+  }
+
+  // Sends mute / test / recalibrate to the device through your Django backend,
+  // which publishes them to elective3/gas_node/cmd on MQTT.
+  // (Form-encoded so the browser does not need a CORS preflight.)
+  async function sendCommand(cmd) {
+    const ctl = new AbortController();
+    const timer = setTimeout(() => ctl.abort(), 4000);
+    try {
+      const res = await fetch(`${BACKEND}/api/command/`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: 'cmd=' + encodeURIComponent(cmd),
+        signal: ctl.signal
+      });
+      if (!res.ok) throw new Error(res.status);
+      return true;
+    } catch (e) {
+      console.error('Command failed:', e);
+      return false;
+    } finally { clearTimeout(timer); }
   }
 
   // ---- data source -------------------------------------------------------
@@ -193,11 +235,44 @@
         const list = Array.isArray(data) ? data : (data.results || []);   // plain list or paginated
         if (!list.length) throw new Error('no telemetry yet');
 
-        const latest = list[0];   // most recent reading
+        // Newest row: by timestamp if the backend sends one, otherwise assume the first row.
+        let latest = list[0];
+        if (rowTime(latest) !== null) {
+          latest = list.reduce((a, b) => (rowTime(b) > rowTime(a) ? b : a), list[0]);
+        }
+
+        // If the newest reading is old, the device is not publishing any more.
+        const t = rowTime(latest);
+        if (t !== null && Date.now() - t > STALE_MS) throw new Error('stale telemetry');
+
+        // MQ-2: prefer the device's own rise. If the backend only stores the absolute
+        // average, fall back to "rise above the first reading after pressing Connect".
+        let mq2;
+        if (latest.mq2_rise !== undefined && latest.mq2_rise !== null) {
+          mq2 = latest.mq2_rise;
+        } else {
+          const avg = latest.mq2_avg || 0;
+          let idle = store.get('mq2Idle', null);
+          if (idle === null) { idle = avg; store.set('mq2Idle', idle); }
+          mq2 = Math.max(0, avg - idle);
+        }
+
+        // Optional extras: use them when the backend provides them.
+        const thresh = {
+          mq2: latest.mq2_thresh, mq7: latest.mq7_thresh, mq135: latest.mq135_thresh
+        };
+        const hasThresh = Object.values(thresh).every(x => typeof x === 'number' && x > 0);
+        const alarm = typeof latest.alarm === 'boolean' ? latest.alarm : undefined;
+        if (typeof latest.muted === 'boolean' && latest.muted !== muted && state === 'danger') {
+          muted = latest.muted; store.set('muted', muted);
+        }
+
         return {
-          mq2: latest.mq2_avg || 0,
+          mq2,
           mq7: latest.mq7_rise || 0,
-          mq135: latest.mq135_rise || 0
+          mq135: latest.mq135_rise || 0,
+          thresh: hasThresh ? thresh : undefined,
+          alarm
         };
       } catch (e) {
         console.error('Backend fetch error:', e);
@@ -230,17 +305,21 @@
   }
 
   // ---- actions (Home page) ----------------------------------------------
-  if ($('muteBtn')) $('muteBtn').onclick = () => {
+  if ($('muteBtn')) $('muteBtn').onclick = async () => {
     muted = true; store.set('muted', true); paint();
     addLog('Alarm silenced by user', 'info');
-    const ip = store.get('espIp', '');
-    if (ip) fetch(`http://${ip}/mute`).catch(() => addLog('Could not reach ESP32 to silence buzzer', 'warn'));
+    if (store.get('espIp', '')) {
+      const ok = await sendCommand('mute');
+      if (!ok) addLog('Could not reach the backend to silence the buzzer', 'warn');
+    }
   };
-  if ($('testBtn')) $('testBtn').onclick = () => {
+  if ($('testBtn')) $('testBtn').onclick = async () => {
     addLog('Sensor test started', 'info');
-    const ip = store.get('espIp', '');
-    if (ip) fetch(`http://${ip}/test`).catch(() => addLog('Could not reach ESP32', 'warn'));
-    else forceSpike = true;
+    if (store.get('espIp', '')) {
+      const ok = await sendCommand('test');
+      if (!ok) addLog('Could not reach the backend to run the test', 'warn');
+      else toast('Test sounds are playing on the device');
+    } else forceSpike = true;
     setTimeout(tick, 300);
   };
 
@@ -251,7 +330,8 @@
       const ip = $('espIp').value.trim().replace(/^https?:\/\//, '').replace(/\/.*$/, '');
       $('espIp').value = ip;
       store.set('espIp', ip);
-      readings = []; store.set('readings2', readings);
+      store.set('mq2Idle', null);                             // re-learn the MQ-2 fallback idle
+      readings = []; store.set('readings3', readings);
       addLog(ip ? 'Connecting to backend...' : 'Switched to demo mode', 'info');
       setConn(ip ? 'connecting' : 'demo');
       tick();
@@ -260,7 +340,7 @@
 
   // ---- alert message & helpers ------------------------------------------
   const alertMsg = () =>
-    `🚨 SafeHome ALERT: smoke/gas detected at home — gas level ${readings.at(-1) ?? '?'}/1000 at ${new Date().toLocaleTimeString()}. Please check immediately.`;
+    `🚨 SafeHome ALERT: smoke/gas detected at home at ${new Date().toLocaleTimeString()}. Please check immediately.`;
   const cleanPhone = p => p.replace(/[^\d+]/g, '');
   const validPhone = p => p.replace(/\D/g, '').length >= 7;
   const copyMsg = msg => {
