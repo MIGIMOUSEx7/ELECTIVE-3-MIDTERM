@@ -1,0 +1,60 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>SafeHome — Contacts</title>
+<script>(function(){try{var t=localStorage.getItem('theme')||(matchMedia('(prefers-color-scheme: light)').matches?'light':'dark');document.documentElement.dataset.theme=t}catch(e){document.documentElement.dataset.theme='dark'}})()</script>
+<link rel="stylesheet" href="style.css">
+</head>
+<body data-state="safe">
+
+<main class="app">
+  <header class="top">
+    <div class="brand">
+      <div class="logo">
+        <svg viewBox="0 0 24 24"><path d="M12 3l8 3v6c0 5-3.5 8-8 9-4.5-1-8-4-8-9V6l8-3z"/><path d="M9 12l2 2 4-4"/></svg>
+      </div>
+      <div><h1>SafeHome</h1><small>Smoke &amp; Gas Guard</small></div>
+    </div>
+    <div class="right">
+      <div class="conn" id="conn"><span class="dot"></span><span id="connText">ESP32 online</span></div>
+      <button class="theme-btn" id="themeBtn" aria-label="Toggle dark/light mode">🌙</button>
+    </div>
+  </header>
+
+  <div class="strip" id="strip" hidden role="alert"><span>🚨 Smoke detected!</span><b>Alert contacts →</b></div>
+
+  <div class="pages">
+    <section class="panel" id="contactsPanel">
+    <h3><span>Alert contacts</span><span id="contactCount">0</span></h3>
+    <div class="quick">
+      <button id="smsAll">📱 SMS everyone</button>
+      <button id="shareBtn">💬 Share / Messenger</button>
+    </div>
+    <div class="add-grid">
+      <input type="text" id="cName" placeholder="Name" maxlength="30">
+      <input type="tel" id="cPhone" placeholder="Phone +63 912 345 6789" inputmode="tel">
+      <input type="text" id="cMsgr" placeholder="Messenger username (optional)" maxlength="60">
+      <button id="addContact">+ Add contact</button>
+
+      
+      <button id="cancelEdit" style="display:none">Cancel</button>
+    </div>
+    <div id="contacts"></div>
+    <div class="hint" style="margin-top:10px">Alerts open in your own SMS / Messenger app with the message ready — you just press send. SMS is pre-filled. Messenger pre-fill isn't guaranteed, so the message is also copied for you to paste.</div>
+  </section>
+  </div>
+
+  <nav class="tabs" aria-label="Pages">
+    <a href="index.html"><span>🏠</span>Home</a>
+    <a href="sensors.html"><span>📡</span>Sensors</a>
+    <a href="contacts.html" class="on"><span>👥</span>Contacts</a>
+    <a href="activity.html"><span>📋</span>Activity</a>
+  </nav>
+</main>
+<div class="toast" id="toast"></div>
+
+<script src="app.js"></script>
+</body>
+</html>

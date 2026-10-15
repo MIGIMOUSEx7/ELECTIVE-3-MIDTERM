@@ -1,0 +1,118 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>SafeHome — Home</title>
+<script>(function(){try{var t=localStorage.getItem('theme')||(matchMedia('(prefers-color-scheme: light)').matches?'light':'dark');document.documentElement.dataset.theme=t}catch(e){document.documentElement.dataset.theme='dark'}})()</script>
+<link rel="stylesheet" href="style.css">
+</head>
+
+
+<body data-state="safe">
+
+  <section class="cover" id="cover" aria-label="Welcome">
+  <div class="cover-inner">
+    <div class="cover-hero">
+      <div class="cover-ring" aria-hidden="true">
+        <svg class="ring" viewBox="0 0 180 180">
+          <defs>
+            <linearGradient id="cover-grad" x1="0" y1="0" x2="1" y2="1">
+              <stop offset="0" stop-color="#6ee7ff"/>
+              <stop offset="1" stop-color="#8b7bff"/>
+            </linearGradient>
+          </defs>
+          <circle class="ring-track" cx="90" cy="90" r="80"/>
+          <circle class="ring-fill" cx="90" cy="90" r="80"/>
+        </svg>
+        <svg class="shield" viewBox="0 0 24 24"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+      </div>
+ 
+      <div>
+        <h1 class="cover-title">Safe Home App </h1>
+        <p class="cover-sub">Live sensor readings and instant alerts to the people you choose.</p>
+        <div class="cover-status"><span class="dot"></span>System ready</div>
+      </div>
+    </div>
+ 
+    <div class="cover-actions">
+      <button class="primary" id="cover-start" type="button">Get started</button>
+    </div>
+  </div>
+</section>
+
+<main class="app">
+  <header class="top">
+    <div class="brand">
+      <div class="logo">
+        <svg viewBox="0 0 24 24"><path d="M12 3l8 3v6c0 5-3.5 8-8 9-4.5-1-8-4-8-9V6l8-3z"/><path d="M9 12l2 2 4-4"/></svg>
+      </div>
+      <div><h1>SafeHome</h1><small>Smoke &amp; Gas Guard</small></div>
+    </div>
+    <div class="right">
+      <div class="conn" id="conn"><span class="dot"></span><span id="connText">ESP32 online</span></div>
+      <button class="theme-btn" id="themeBtn" aria-label="Toggle dark/light mode">🌙</button>
+    </div>
+  </header>
+
+  <div class="strip" id="strip" hidden role="alert"><span>🚨 Smoke detected!</span><b>Alert contacts →</b></div>
+
+  <div class="pages">
+    <section class="gauge-card">
+    <h2>Air Concentration</h2>
+    <div class="gauge">
+      <svg viewBox="0 0 200 110">
+        <path class="track" d="M20 100 A80 80 0 0 1 180 100"/>
+        <path class="fill" id="arc" d="M20 100 A80 80 0 0 1 180 100"/>
+      </svg>
+      <div class="reading"><div class="num" id="ppm">380</div><div class="unit">gas level</div></div>
+    </div>
+    <div class="scale"><span>0</span><span>500</span><span>1000</span></div>
+    <div class="pill" id="pill">● Safe range</div>
+  </section>
+    <section class="alert" id="alert">
+    <div class="ic" id="alertIcon">✅</div>
+    <div><b id="alertTitle">All clear</b><span id="alertSub">No smoke or gas detected</span></div>
+  </section>
+    <section class="stats">
+    <div class="stat"><label>Min</label><div id="min">–</div></div>
+    <div class="stat"><label>Avg</label><div id="avg">–</div></div>
+    <div class="stat"><label>Peak</label><div id="max">–</div></div>
+  </section>
+    <section class="actions">
+    <button id="muteBtn">🔕 Silence alarm</button>
+    <button class="primary" id="testBtn">🧪 Test sensor</button>
+  </section>
+  </div>
+
+  <nav class="tabs" aria-label="Pages">
+    <a href="index.html" class="on"><span>🏠</span>Home</a>
+    <a href="sensors.html"><span>📡</span>Sensors</a>
+    <a href="contacts.html"><span>👥</span>Contacts</a>
+    <a href="activity.html"><span>📋</span>Activity</a>
+  </nav>
+</main>
+<div class="toast" id="toast"></div>
+
+<script src="app.js"></script>
+
+<script>
+(function () {
+  var cover = document.getElementById('cover');
+  var btn = document.getElementById('cover-start');
+  if (!cover || !btn) return;
+ 
+  // Show once per browser session; remove these 3 lines to show on every load.
+  try { if (sessionStorage.getItem('coverSeen')) { cover.hidden = true; return; } } catch (e) {}
+ 
+  btn.focus();
+  btn.addEventListener('click', function () {
+    try { sessionStorage.setItem('coverSeen', '1'); } catch (e) {}
+    cover.classList.add('leave');
+    setTimeout(function () { cover.hidden = true; }, 500);
+  });
+})();
+</script>
+
+</body>
+</html>

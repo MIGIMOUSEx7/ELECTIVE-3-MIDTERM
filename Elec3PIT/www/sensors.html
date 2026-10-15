@@ -1,0 +1,55 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>SafeHome — Sensors</title>
+<script>(function(){try{var t=localStorage.getItem('theme')||(matchMedia('(prefers-color-scheme: light)').matches?'light':'dark');document.documentElement.dataset.theme=t}catch(e){document.documentElement.dataset.theme='dark'}})()</script>
+<link rel="stylesheet" href="style.css">
+</head>
+<body data-state="safe">
+
+<main class="app">
+  <header class="top">
+    <div class="brand">
+      <div class="logo">
+        <svg viewBox="0 0 24 24"><path d="M12 3l8 3v6c0 5-3.5 8-8 9-4.5-1-8-4-8-9V6l8-3z"/><path d="M9 12l2 2 4-4"/></svg>
+      </div>
+      <div><h1>SafeHome</h1><small>Smoke &amp; Gas Guard</small></div>
+    </div>
+    <div class="right">
+      <div class="conn" id="conn"><span class="dot"></span><span id="connText">ESP32 online</span></div>
+      <button class="theme-btn" id="themeBtn" aria-label="Toggle dark/light mode">🌙</button>
+    </div>
+  </header>
+
+  <div class="strip" id="strip" hidden role="alert"><span>🚨 Smoke detected!</span><b>Alert contacts →</b></div>
+
+  <div class="pages">
+    <section class="panel">
+    <h3><span>Sensors</span><span id="mode">Demo data</span></h3>
+    <div id="sensorList"></div>
+    <div class="ip-row">
+      <input type="text" id="espIp" placeholder="ESP32 IP, e.g. 192.168.1.50 (empty = demo)" inputmode="decimal">
+      <button id="connectBtn">Connect</button>
+    </div>
+    <div class="hint" style="margin-top:8px">Open this page directly on a device connected to the same Wi-Fi as the ESP32.</div>
+  </section>
+    <section class="panel">
+    <h3><span>Live trend</span><span id="updated">–</span></h3>
+    <svg id="spark" viewBox="0 0 300 70" preserveAspectRatio="none"></svg>
+  </section>
+  </div>
+
+  <nav class="tabs" aria-label="Pages">
+    <a href="index.html"><span>🏠</span>Home</a>
+    <a href="sensors.html" class="on"><span>📡</span>Sensors</a>
+    <a href="contacts.html"><span>👥</span>Contacts</a>
+    <a href="activity.html"><span>📋</span>Activity</a>
+  </nav>
+</main>
+<div class="toast" id="toast"></div>
+
+<script src="app.js"></script>
+</body>
+</html>
